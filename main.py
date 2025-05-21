@@ -134,45 +134,29 @@ async def scrape_watchlist(url):
         # print(f"Error fetching the page: {str(e)}")
         return []
 
-async def find_common_movies(username1, username2):
+async def find_common_movies(*usernames):
     """
-    Find movies that are common between two users' watchlists.
+    Find movies that are common between multiple users' watchlists.
     
     Args:
-        username1 (str): First user's Letterboxd username
-        username2 (str): Second user's Letterboxd username
+        *usernames: Variable number of Letterboxd usernames (2-4)
         
     Returns:
         list: List of common movies
     """
-    # print(f"Getting watchlist for {username1}...")
-    url1 = get_watchlist_url(username1)
-    movies1 = set(await scrape_watchlist(url1))
+    if not 2 <= len(usernames) <= 4:
+        raise ValueError("Number of usernames must be between 2 and 4")
     
-    # print(f"\nGetting watchlist for {username2}...")
-    url2 = get_watchlist_url(username2)
-    movies2 = set(await scrape_watchlist(url2))
+    # Get watchlists for all users
+    movie_sets = []
+    for username in usernames:
+        url = get_watchlist_url(username)
+        movies = set(await scrape_watchlist(url))
+        movie_sets.append(movies)
     
-    common_movies = sorted(list(movies1.intersection(movies2)))
-    
-    # # Create logs directory if it doesn't exist
-    # if not os.path.exists('logs'):
-    #     os.makedirs('logs')
-        
-    # # Create timestamped log file
-    # timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    # log_filename = f'logs/common_movies_{timestamp}.txt'
-    
-    # # Write common movies to log file
-    # with open(log_filename, 'w', encoding='utf-8') as f:
-    #     f.write(f"Common movies between {username1} and {username2}\n")
-    #     f.write(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-    #     f.write("-" * 50 + "\n")
-    #     for movie in common_movies:
-    #         f.write(f"{movie}\n")
-    
-    # print(f"\nResults have been saved to: {log_filename}")
-    return common_movies
+    # Find intersection of all sets
+    common_movies = set.intersection(*movie_sets)
+    return sorted(list(common_movies))
 
 def pick_random_movie(movie_list):
     """
@@ -194,24 +178,36 @@ async def on_ready():
     try:
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} command(s)")
+        # Set bot status
+        await bot.change_presence(activity=discord.Game(name="Try using /random_movie!"))
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
-@bot.tree.command(name="watchlist_overlap", description="Compare two Letterboxd users' watchlists and find common movies")
-async def watchlist_overlap(interaction: discord.Interaction, username1: str, username2: str):
+@bot.tree.command(name="watchlist_overlap", description="Compare watchlists between 2-4 users")
+async def watchlist_overlap(
+    interaction: discord.Interaction,
+    username1: str,
+    username2: str,
+    username3: str = None,
+    username4: str = None
+):
     """
-    Compare two Letterboxd users' watchlists and find common movies.
+    Compare watchlists between 2-4 users and find common movies.
     
     Args:
         interaction: Discord interaction
         username1: First user's Letterboxd username
         username2: Second user's Letterboxd username
+        username3: Third user's Letterboxd username (optional)
+        username4: Fourth user's Letterboxd username (optional)
     """
     # Defer the response since this might take a while
     await interaction.response.defer()
     
     try:
-        common_movies = await find_common_movies(username1, username2)
+        # Filter out None values and get common movies
+        usernames = [u for u in [username1, username2, username3, username4] if u is not None]
+        common_movies = await find_common_movies(*usernames)
         
         if not common_movies:
             await interaction.followup.send("No common movies found between these users.")
@@ -219,7 +215,7 @@ async def watchlist_overlap(interaction: discord.Interaction, username1: str, us
             
         # Create message chunks to avoid Discord's message length limit
         message_chunks = []
-        current_chunk = f"Common movies between {username1} and {username2}:\n\n"
+        current_chunk = f"Common movies between {', '.join(usernames)}:\n\n"
         
         for movie in common_movies:
             if len(current_chunk) + len(movie) + 3 > 1900:  # Discord's limit is 2000
@@ -239,28 +235,40 @@ async def watchlist_overlap(interaction: discord.Interaction, username1: str, us
     except Exception as e:
         await interaction.followup.send(f"An error occurred: {str(e)}")
 
-@bot.tree.command(name="random_movie", description="Pick a random movie from the common watchlist of two users")
-async def random_movie(interaction: discord.Interaction, username1: str, username2: str):
+@bot.tree.command(name="random_movie", description="Pick a random movie from common watchlist between 2-4 users")
+async def random_movie(
+    interaction: discord.Interaction,
+    username1: str,
+    username2: str,
+    username3: str = None,
+    username4: str = None
+):
     """
-    Pick a random movie from the common watchlist of two users.
+    Pick a random movie from the common watchlist of 2-4 users.
     
     Args:
         interaction: Discord interaction
         username1: First user's Letterboxd username
         username2: Second user's Letterboxd username
+        username3: Third user's Letterboxd username (optional)
+        username4: Fourth user's Letterboxd username (optional)
     """
     # Defer the response since this might take a while
     await interaction.response.defer()
     
     try:
-        common_movies = await find_common_movies(username1, username2)
+        # Filter out None values and get common movies
+        usernames = [u for u in [username1, username2, username3, username4] if u is not None]
+        common_movies = await find_common_movies(*usernames)
         
         if not common_movies:
             await interaction.followup.send("No common movies found between these users.")
             return
         
         random_movie = pick_random_movie(common_movies)
-        await interaction.followup.send(f"🎬 Random movie pick: **{random_movie}**")
+        await interaction.followup.send(
+            f"🎬 Random movie pick for {', '.join(usernames)}:\n**{random_movie}**"
+        )
         
     except Exception as e:
         await interaction.followup.send(f"An error occurred: {str(e)}")
